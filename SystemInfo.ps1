@@ -1,18 +1,18 @@
 # SystemInfo.ps1
-# Скрипт собирает информацию о системе и сохраняет отчёт в папку со скриптом
+# РЎРєСЂРёРїС‚ СЃРѕР±РёСЂР°РµС‚ РёРЅС„РѕСЂРјР°С†РёСЋ Рѕ СЃРёСЃС‚РµРјРµ Рё СЃРѕС…СЂР°РЅСЏРµС‚ РѕС‚С‡С‘С‚ РІ РїР°РїРєСѓ СЃРѕ СЃРєСЂРёРїС‚РѕРј
 
-# Определяем папку, в которой находится скрипт
+# РћРїСЂРµРґРµР»СЏРµРј РїР°РїРєСѓ, РІ РєРѕС‚РѕСЂРѕР№ РЅР°С…РѕРґРёС‚СЃСЏ СЃРєСЂРёРїС‚
 $scriptPath = Split-Path -Parent $MyInvocation.MyCommand.Path
 
-# Имя компьютера и пользователя
+# РРјСЏ РєРѕРјРїСЊСЋС‚РµСЂР° Рё РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ
 $computer = $env:COMPUTERNAME
 $user = $env:USERNAME
 $date = Get-Date -Format "yyyy-MM-dd_HH-mm-ss"
 
-# Имя выходного файла (в папке скрипта)
+# РРјСЏ РІС‹С…РѕРґРЅРѕРіРѕ С„Р°Р№Р»Р° (РІ РїР°РїРєРµ СЃРєСЂРёРїС‚Р°)
 $outFile = Join-Path $scriptPath "SystemInfo_${computer}_${user}_$date.txt"
 
-# Функция преобразования кода типа памяти в текст
+# Р¤СѓРЅРєС†РёСЏ РїСЂРµРѕР±СЂР°Р·РѕРІР°РЅРёСЏ РєРѕРґР° С‚РёРїР° РїР°РјСЏС‚Рё РІ С‚РµРєСЃС‚
 function Get-MemoryTypeString {
     param([int]$typeCode)
     switch ($typeCode) {
@@ -53,15 +53,15 @@ function Get-MemoryTypeString {
     }
 }
 
-# Процессор
+# РџСЂРѕС†РµСЃСЃРѕСЂ
 $cpu = Get-CimInstance Win32_Processor | Select-Object -First 1
-$cpuText = "Процессор: $($cpu.Name) | Ядер: $($cpu.NumberOfCores) | Логических процессоров: $($cpu.NumberOfLogicalProcessors)"
+$cpuText = "РџСЂРѕС†РµСЃСЃРѕСЂ: $($cpu.Name) | РЇРґРµСЂ: $($cpu.NumberOfCores) | Р›РѕРіРёС‡РµСЃРєРёС… РїСЂРѕС†РµСЃСЃРѕСЂРѕРІ: $($cpu.NumberOfLogicalProcessors)"
 
-# Общий объём ОЗУ
+# РћР±С‰РёР№ РѕР±СЉС‘Рј РћР—РЈ
 $ramBytes = (Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory
 $ramGB = [math]::Round($ramBytes / 1GB, 2)
 
-# Детальная информация по планкам памяти
+# Р”РµС‚Р°Р»СЊРЅР°СЏ РёРЅС„РѕСЂРјР°С†РёСЏ РїРѕ РїР»Р°РЅРєР°Рј РїР°РјСЏС‚Рё
 $memoryModules = Get-CimInstance Win32_PhysicalMemory
 $memoryDetails = @()
 foreach ($mod in $memoryModules) {
@@ -69,58 +69,58 @@ foreach ($mod in $memoryModules) {
     $speed = $mod.Speed
     $typeCode = $mod.SMBIOSMemoryType
     $typeStr = Get-MemoryTypeString -typeCode $typeCode
-    $memoryDetails += "  Планка: $capacityGB ГБ, $typeStr, $speed МГц"
+    $memoryDetails += "  РџР»Р°РЅРєР°: $capacityGB Р“Р‘, $typeStr, $speed РњР“С†"
 }
 if ($memoryDetails.Count -eq 0) {
-    $memoryDetails = "  (подробная информация о планках недоступна)"
+    $memoryDetails = "  (РїРѕРґСЂРѕР±РЅР°СЏ РёРЅС„РѕСЂРјР°С†РёСЏ Рѕ РїР»Р°РЅРєР°С… РЅРµРґРѕСЃС‚СѓРїРЅР°)"
 }
 
-# Логические диски (C:, D: и т.д.)
+# Р›РѕРіРёС‡РµСЃРєРёРµ РґРёСЃРєРё (C:, D: Рё С‚.Рґ.)
 $logicalDisks = Get-CimInstance Win32_LogicalDisk -Filter "DriveType=3"
 $logicalDiskLines = @()
 foreach ($disk in $logicalDisks) {
     $size = [math]::Round($disk.Size / 1GB, 2)
     $free = [math]::Round($disk.FreeSpace / 1GB, 2)
     $percent = [math]::Round(($disk.FreeSpace / $disk.Size) * 100, 2)
-    $logicalDiskLines += "  $($disk.DeviceID) : $size ГБ всего, $free ГБ свободно ($percent%)"
+    $logicalDiskLines += "  $($disk.DeviceID) : $size Р“Р‘ РІСЃРµРіРѕ, $free Р“Р‘ СЃРІРѕР±РѕРґРЅРѕ ($percent%)"
 }
 
-# Физические диски (модели)
+# Р¤РёР·РёС‡РµСЃРєРёРµ РґРёСЃРєРё (РјРѕРґРµР»Рё)
 $physicalDisks = Get-CimInstance Win32_DiskDrive
 $physicalDiskLines = @()
 foreach ($pdisk in $physicalDisks) {
     $sizeGB = [math]::Round($pdisk.Size / 1GB, 2)
-    $physicalDiskLines += "  $($pdisk.Model) : $sizeGB ГБ, интерфейс: $($pdisk.InterfaceType)"
+    $physicalDiskLines += "  $($pdisk.Model) : $sizeGB Р“Р‘, РёРЅС‚РµСЂС„РµР№СЃ: $($pdisk.InterfaceType)"
 }
 
-# Операционная система
+# РћРїРµСЂР°С†РёРѕРЅРЅР°СЏ СЃРёСЃС‚РµРјР°
 $os = Get-CimInstance Win32_OperatingSystem
-$osText = "ОС: $($os.Caption) $($os.Version)"
+$osText = "РћРЎ: $($os.Caption) $($os.Version)"
 
-# Формирование отчёта
+# Р¤РѕСЂРјРёСЂРѕРІР°РЅРёРµ РѕС‚С‡С‘С‚Р°
 $report = @"
-Отчёт о системе
-Дата: $(Get-Date)
-Компьютер: $computer
-Пользователь: $user
+РћС‚С‡С‘С‚ Рѕ СЃРёСЃС‚РµРјРµ
+Р”Р°С‚Р°: $(Get-Date)
+РљРѕРјРїСЊСЋС‚РµСЂ: $computer
+РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ: $user
 $osText
 
 $cpuText
 
-Оперативная память:
-  Всего: $ramGB ГБ (определено системой)
-  Детально по планкам:
+РћРїРµСЂР°С‚РёРІРЅР°СЏ РїР°РјСЏС‚СЊ:
+  Р’СЃРµРіРѕ: $ramGB Р“Р‘ (РѕРїСЂРµРґРµР»РµРЅРѕ СЃРёСЃС‚РµРјРѕР№)
+  Р”РµС‚Р°Р»СЊРЅРѕ РїРѕ РїР»Р°РЅРєР°Рј:
 $($memoryDetails -join "`n")
 
-Логические диски:
+Р›РѕРіРёС‡РµСЃРєРёРµ РґРёСЃРєРё:
 $($logicalDiskLines -join "`n")
 
-Физические диски:
+Р¤РёР·РёС‡РµСЃРєРёРµ РґРёСЃРєРё:
 $($physicalDiskLines -join "`n")
 "@
 
-# Сохранение файла
+# РЎРѕС…СЂР°РЅРµРЅРёРµ С„Р°Р№Р»Р°
 $report | Out-File -FilePath $outFile -Encoding UTF8
 
-Write-Host "Отчёт сохранён: $outFile"
-Read-Host "Нажмите Enter для выхода"
+Write-Host "РћС‚С‡С‘С‚ СЃРѕС…СЂР°РЅС‘РЅ: $outFile"
+Read-Host "РќР°Р¶РјРёС‚Рµ Enter РґР»СЏ РІС‹С…РѕРґР°"
