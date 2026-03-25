@@ -1,18 +1,18 @@
 # SystemInfo.ps1
-# РЎРєСЂРёРїС‚ СЃРѕР±РёСЂР°РµС‚ РёРЅС„РѕСЂРјР°С†РёСЋ Рѕ СЃРёСЃС‚РµРјРµ Рё СЃРѕС…СЂР°РЅСЏРµС‚ РѕС‚С‡С‘С‚ РІ РїР°РїРєСѓ СЃРѕ СЃРєСЂРёРїС‚РѕРј
+# Скрипт собирает информацию о системе и сохраняет отчёт в папку со скриптом
 
-# РћРїСЂРµРґРµР»СЏРµРј РїР°РїРєСѓ, РІ РєРѕС‚РѕСЂРѕР№ РЅР°С…РѕРґРёС‚СЃСЏ СЃРєСЂРёРїС‚
+# Определяем папку, в которой находится скрипт
 $scriptPath = Split-Path -Parent $MyInvocation.MyCommand.Path
 
-# РРјСЏ РєРѕРјРїСЊСЋС‚РµСЂР° Рё РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ
+# Имя компьютера и пользователя
 $computer = $env:COMPUTERNAME
 $user = $env:USERNAME
 $date = Get-Date -Format "yyyy-MM-dd_HH-mm-ss"
 
-# РРјСЏ РІС‹С…РѕРґРЅРѕРіРѕ С„Р°Р№Р»Р° (РІ РїР°РїРєРµ СЃРєСЂРёРїС‚Р°)
+# Имя выходного файла (в папке скрипта)
 $outFile = Join-Path $scriptPath "SystemInfo_${computer}_${user}_$date.txt"
 
-# Р¤СѓРЅРєС†РёСЏ РїСЂРµРѕР±СЂР°Р·РѕРІР°РЅРёСЏ РєРѕРґР° С‚РёРїР° РїР°РјСЏС‚Рё РІ С‚РµРєСЃС‚
+# Функция преобразования кода типа памяти в текст
 function Get-MemoryTypeString {
     param([int]$typeCode)
     switch ($typeCode) {
@@ -53,15 +53,73 @@ function Get-MemoryTypeString {
     }
 }
 
-# РџСЂРѕС†РµСЃСЃРѕСЂ
-$cpu = Get-CimInstance Win32_Processor | Select-Object -First 1
-$cpuText = "РџСЂРѕС†РµСЃСЃРѕСЂ: $($cpu.Name) | РЇРґРµСЂ: $($cpu.NumberOfCores) | Р›РѕРіРёС‡РµСЃРєРёС… РїСЂРѕС†РµСЃСЃРѕСЂРѕРІ: $($cpu.NumberOfLogicalProcessors)"
+# Функция получения IP-адресов (IPv4, кроме локальных)
+function Get-IPAddresses {
+    try {
+        $ips = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction Stop | Where-Object { $_.IPAddress -ne "127.0.0.1" } | Select-Object -ExpandProperty IPAddress
+        if ($ips) {
+            return $ips -join ", "
+        } else {
+            return "Не найдено"
+        }
+    } catch {
+        return "Ошибка получения IP-адресов"
+    }
+}
 
-# РћР±С‰РёР№ РѕР±СЉС‘Рј РћР—РЈ
+# Функция получения списка установленных программ (исключая стандартные Windows)
+function Get-InstalledPrograms {
+    $paths = @(
+        "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*",
+        "HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*"
+    )
+    
+    $programs = Get-ItemProperty $paths -ErrorAction SilentlyContinue | 
+                Where-Object { $_.DisplayName -and $_.DisplayName -notmatch '^KB\d+' } |  # Исключаем обновления KB
+                Select-Object DisplayName, Publisher, InstallLocation
+    
+    # Фильтрация: исключаем программы, установленные в системные папки Windows
+    $filtered = $programs | Where-Object {
+        $location = $_.InstallLocation
+        # Если путь не указан, считаем, что это не стандартная программа (оставляем)
+        if (-not $location) { return $true }
+        
+        $locLower = $location.ToLower()
+        $sysRoot = $env:SystemRoot.ToLower()
+        $progFiles = $env:ProgramFiles.ToLower()
+        $progFilesX86 = ${env:ProgramFiles(x86)}.ToLower()
+        
+        # Проверяем, находится ли путь в системных папках
+        $inSystem = ($locLower -like "$sysRoot\*") -or 
+                    ($locLower -like "$progFiles\windowsapps\*") -or 
+                    ($progFilesX86 -and ($locLower -like "$progFilesX86\windowsapps\*"))
+        
+        # Оставляем программы, которые НЕ в системных папках
+        -not $inSystem
+    }
+    
+    $filtered = $filtered | Sort-Object DisplayName
+    
+    if ($filtered) {
+        $lines = @()
+        foreach ($prog in $filtered) {
+            $lines += "  $($prog.DisplayName) | $($prog.Publisher) | $($prog.InstallLocation)"
+        }
+        return $lines -join "`n"
+    } else {
+        return "  (нет установленных программ после фильтрации)"
+    }
+}
+
+# Процессор
+$cpu = Get-CimInstance Win32_Processor | Select-Object -First 1
+$cpuText = "Процессор: $($cpu.Name) | Ядер: $($cpu.NumberOfCores) | Логических процессоров: $($cpu.NumberOfLogicalProcessors)"
+
+# Общий объём ОЗУ
 $ramBytes = (Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory
 $ramGB = [math]::Round($ramBytes / 1GB, 2)
 
-# Р”РµС‚Р°Р»СЊРЅР°СЏ РёРЅС„РѕСЂРјР°С†РёСЏ РїРѕ РїР»Р°РЅРєР°Рј РїР°РјСЏС‚Рё
+# Детальная информация по планкам памяти
 $memoryModules = Get-CimInstance Win32_PhysicalMemory
 $memoryDetails = @()
 foreach ($mod in $memoryModules) {
@@ -69,58 +127,70 @@ foreach ($mod in $memoryModules) {
     $speed = $mod.Speed
     $typeCode = $mod.SMBIOSMemoryType
     $typeStr = Get-MemoryTypeString -typeCode $typeCode
-    $memoryDetails += "  РџР»Р°РЅРєР°: $capacityGB Р“Р‘, $typeStr, $speed РњР“С†"
+    $memoryDetails += "  Планка: $capacityGB ГБ, $typeStr, $speed МГц"
 }
 if ($memoryDetails.Count -eq 0) {
-    $memoryDetails = "  (РїРѕРґСЂРѕР±РЅР°СЏ РёРЅС„РѕСЂРјР°С†РёСЏ Рѕ РїР»Р°РЅРєР°С… РЅРµРґРѕСЃС‚СѓРїРЅР°)"
+    $memoryDetails = "  (подробная информация о планках недоступна)"
 }
 
-# Р›РѕРіРёС‡РµСЃРєРёРµ РґРёСЃРєРё (C:, D: Рё С‚.Рґ.)
+# Логические диски (C:, D: и т.д.)
 $logicalDisks = Get-CimInstance Win32_LogicalDisk -Filter "DriveType=3"
 $logicalDiskLines = @()
 foreach ($disk in $logicalDisks) {
     $size = [math]::Round($disk.Size / 1GB, 2)
     $free = [math]::Round($disk.FreeSpace / 1GB, 2)
     $percent = [math]::Round(($disk.FreeSpace / $disk.Size) * 100, 2)
-    $logicalDiskLines += "  $($disk.DeviceID) : $size Р“Р‘ РІСЃРµРіРѕ, $free Р“Р‘ СЃРІРѕР±РѕРґРЅРѕ ($percent%)"
+    $logicalDiskLines += "  $($disk.DeviceID) : $size ГБ всего, $free ГБ свободно ($percent%)"
 }
 
-# Р¤РёР·РёС‡РµСЃРєРёРµ РґРёСЃРєРё (РјРѕРґРµР»Рё)
+# Физические диски (модели)
 $physicalDisks = Get-CimInstance Win32_DiskDrive
 $physicalDiskLines = @()
 foreach ($pdisk in $physicalDisks) {
     $sizeGB = [math]::Round($pdisk.Size / 1GB, 2)
-    $physicalDiskLines += "  $($pdisk.Model) : $sizeGB Р“Р‘, РёРЅС‚РµСЂС„РµР№СЃ: $($pdisk.InterfaceType)"
+    $physicalDiskLines += "  $($pdisk.Model) : $sizeGB ГБ, интерфейс: $($pdisk.InterfaceType)"
 }
 
-# РћРїРµСЂР°С†РёРѕРЅРЅР°СЏ СЃРёСЃС‚РµРјР°
+# Операционная система
 $os = Get-CimInstance Win32_OperatingSystem
-$osText = "РћРЎ: $($os.Caption) $($os.Version)"
+$osText = "ОС: $($os.Caption) $($os.Version)"
 
-# Р¤РѕСЂРјРёСЂРѕРІР°РЅРёРµ РѕС‚С‡С‘С‚Р°
+# IP-адреса
+$ipAddresses = Get-IPAddresses
+
+# Установленные программы
+$installedPrograms = Get-InstalledPrograms
+
+# Формирование отчёта
 $report = @"
-РћС‚С‡С‘С‚ Рѕ СЃРёСЃС‚РµРјРµ
-Р”Р°С‚Р°: $(Get-Date)
-РљРѕРјРїСЊСЋС‚РµСЂ: $computer
-РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ: $user
+Отчёт о системе
+Дата: $(Get-Date)
+Компьютер: $computer
+Пользователь: $user
 $osText
 
 $cpuText
 
-РћРїРµСЂР°С‚РёРІРЅР°СЏ РїР°РјСЏС‚СЊ:
-  Р’СЃРµРіРѕ: $ramGB Р“Р‘ (РѕРїСЂРµРґРµР»РµРЅРѕ СЃРёСЃС‚РµРјРѕР№)
-  Р”РµС‚Р°Р»СЊРЅРѕ РїРѕ РїР»Р°РЅРєР°Рј:
+Оперативная память:
+  Всего: $ramGB ГБ (определено системой)
+  Детально по планкам:
 $($memoryDetails -join "`n")
 
-Р›РѕРіРёС‡РµСЃРєРёРµ РґРёСЃРєРё:
+Логические диски:
 $($logicalDiskLines -join "`n")
 
-Р¤РёР·РёС‡РµСЃРєРёРµ РґРёСЃРєРё:
+Физические диски:
 $($physicalDiskLines -join "`n")
+
+IP-адреса:
+  $ipAddresses
+
+Установленные программы (исключая стандартные Windows):
+$installedPrograms
 "@
 
-# РЎРѕС…СЂР°РЅРµРЅРёРµ С„Р°Р№Р»Р°
+# Сохранение файла
 $report | Out-File -FilePath $outFile -Encoding UTF8
 
-Write-Host "РћС‚С‡С‘С‚ СЃРѕС…СЂР°РЅС‘РЅ: $outFile"
-Read-Host "РќР°Р¶РјРёС‚Рµ Enter РґР»СЏ РІС‹С…РѕРґР°"
+Write-Host "Отчёт сохранён: $outFile"
+Read-Host "Нажмите Enter для выхода"
